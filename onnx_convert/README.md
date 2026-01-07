@@ -1,65 +1,69 @@
-# Dino v3 QNN Deployment on IQ-9075
+# DINOv3 QNN Deployment on IQ-9075 EVK
 
-This project deploys the Dino v3 Vision Transformer model to the Qualcomm IQ-9075 Evaluation Kit using two methods:
-1.  **Native QNN (C++)**: Compiled directly against the QNN SDK for maximum efficiency.
-2.  **ONNX Runtime (Python)**: Uses the QNN Execution Provider for ease of integration.
+This project deploys the **DINOv3** model on the **Qualcomm IQ-9075 Evaluation Kit** using the **Native QNN SDK** with **HTP (Hexagon Tensor Processor)** acceleration.
+
+## Overview
+- **Model**: DINOv3 (ViT-based)
+- **Framework**: Native QNN (C++ API)
+- **Backend**: HTP (Hardware Accelerated)
+- **Input Resolution**: 224x224 (Images are automatically resized)
+- **Key Features**:
+    - **One-Click Deployment**: `deploy.py` handles uploading, on-device compilation, and verification.
+    - **HTP Optimization**: Automatic uploading of correct Hexagon Skel libraries (`libQnnHtp*Skel.so`) to resolve firmware incompatibilities.
+    - **Standalone Inference**: `inference.py` allows easy testing with custom images.
+
+## Project Structure
+```text
+.
+├── assets/                 # Model inputs (ONNX, calibration data)
+├── native_qnn/
+│   ├── convert_on_host.sh  # Script to convert ONNX -> QNN CPP/Bin
+│   ├── src/                # C++ Source for on-device inference app
+│   └── bin/                # Model weights (Large files)
+├── scripts/
+│   ├── deploy.py           # Main deployment & verification script
+│   ├── inference.py        # Standalone inference script for custom images
+│   └── preprocess_input.py # Image preprocessing utility
+├── venv_qnn/               # Python virtual environment
+└── output_results/         # Downloaded inference results (created automatically)
+```
 
 ## Prerequisites
 
-*   **Host**: Linux (x86_64) with QNN SDK installed.
-*   **Device**: IQ-9075 (aarch64) with QNN runtime libraries (`libQnnCpu.so`) in `/usr/lib`.
-*   **Network**: Passwordless SSH access recommended (Script uses `ubuntu:qualcomm` by default).
-
-## Installation
-
-1.  **Setup Host Environment**:
+### Host (x86 Linux)
+1.  **QNN SDK**: Installed at `/opt/qcom/aistack/qairt/<version>` (or similar).
+2.  **Files**: Place `dinov3.onnx` in `assets/`.
+3.  **Python Environment**:
     ```bash
-    # Create venv with specific versions for QNN tools (Numpy < 2.0)
-    python3.10 -m venv venv_qnn
     source venv_qnn/bin/activate
     pip install -r requirements.txt
     ```
 
-2.  **Place Test Image (Optional)**:
-    Place a `test_image.jpg` in this directory to automatically verify inference.
+## Workflow
 
-## Usage
-
-Use the master deployment script `3_deploy_and_run.py` to handle everything (conversion, upload, compilation, execution).
-
-Deploy and run using the Python script in `scripts/`.
-
-### 1. Native QNN Mode (Verified)
-Compiles C++ inference app on device and runs it.
+### 1. Convert Model (Host)
+Converts the ONNX model to QNN C++ source code and quantized binary weights.
 ```bash
-python scripts/deploy.py --mode native
-```
--   **Features**:
-    -   Smart Reuse: Skips uploading large files (`.bin`, SDK libs) if they exist on device.
-    -   On-Device Compilation: Automatically compiles model and wrappers.
-    -   Verification: Runs `inference_dinov3` custom app to validate model loading.
-    -   Inputs: Automatically preprocesses `test/test_image.jpg`.
-
-### 2. ONNX Runtime Mode (Verified)
-Runs generic ONNX inference via Python.
-```bash
-python scripts/deploy.py --mode ort
+cd native_qnn
+./convert_on_host.sh
+cd ..
 ```
 
-## Directory Structure (Host)
--   `scripts/`: Deployment (`deploy.py`) and utility (`preprocess_input.py`) scripts.
--   `native_qnn/src`: C++ source (`dinov3_qnn.cpp`, `inference_dinov3.cpp`).
--   `native_qnn/bin`: Large binary weights (`dinov3_qnn.bin`).
--   `assets/`: ONNX models and JSON configs.
--   `test/`: Test images.
+### 2. Deploy & Verify (Host -> Device)
+This script uploads all necessary assets, libraries (including Skel libs), compiles the model on the device, and runs a verification test.
+```bash
+python3 scripts/deploy.py
+```
+*   **Result**: Logs should show `Finished Executing Graphs` on HTP.
+*   **Artifacts**: Results are downloaded to `output_results/`.
 
-## Directory Structure (Device)
-Deployed to `~/dinov3_deployment`.
-The script will automatically:
-1.  Preprocess it to `input.raw` (1x3x224x224, normalized).
-2.  Run inference on the device.
-3.  Save outputs to `output/` directory on the device.
+### 3. Run Inference (Custom Images)
+To run the model on a new image:
+```bash
+python3 scripts/inference.py path/to/my_image.jpg
+```
+*   **Output**: Results (`last_hidden_state.raw`, etc.) are saved to `inference_results/`.
 
 ## Troubleshooting
-*   **Connection Timed Out**: Ensure the device IP (`192.168.0.202`) is reachable.
-*   **QNN_SDK_ROOT Error**: Ensure `export QNN_SDK_ROOT=/path/to/sdk` is set on the host.
+- **CRC Mismatch / Unsupported SoC**: This usually means the device's DSP firmware is older than the SDK. `deploy.py` fixes this by uploading matching `*Skel.so` files from your SDK to `~/dinov3_deployment/lib/hexagon` and setting `ADSP_LIBRARY_PATH`.
+- **Connection Failed**: Check the IP info in `scripts/deploy.py`.
