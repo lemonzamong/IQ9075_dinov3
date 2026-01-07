@@ -1,0 +1,17 @@
+torch
+transformers
+onnx
+onnxruntime
+huggingface_hub
+mnn
+pillow
+torchvision
+accelerate
+onnxscript
+paramiko
+scp
+
+
+
+
+

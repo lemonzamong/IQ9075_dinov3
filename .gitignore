@@ -1,0 +1,16 @@
+__pycache__/
+*.py[cod]
+*.class
+.env
+.idea/
+.vscode/
+*.swp
+.DS_Store
+
+# Ignore virtual environments recursively
+**/venv/
+**/.venv/
+env/
+
+# Ignore large directories
+iq9_ubuntu_images/
