@@ -1,76 +1,65 @@
-# Dino v3 on Qualcomm IQ-9075 (QNN)
+# Dino v3 QNN Deployment on IQ-9075
 
-This repository contains tools to export the Dino v3 model to ONNX and deploy it to the IQ-9075 Evaluation Kit for inference.
+This project deploys the Dino v3 Vision Transformer model to the Qualcomm IQ-9075 Evaluation Kit using two methods:
+1.  **Native QNN (C++)**: Compiled directly against the QNN SDK for maximum efficiency.
+2.  **ONNX Runtime (Python)**: Uses the QNN Execution Provider for ease of integration.
 
 ## Prerequisites
-- **Host**: Python 3.8+
-- **Device (IQ-9075)**: Connected to network, running Ubuntu (QNN SDK/Runtime recommended).
 
-## Setup
-1. Install Host Dependencies:
-   ```bash
-   pip install -r requirements.txt
-   ```
+*   **Host**: Linux (x86_64) with QNN SDK installed.
+*   **Device**: IQ-9075 (aarch64) with QNN runtime libraries (`libQnnCpu.so`) in `/usr/lib`.
+*   **Network**: Passwordless SSH access recommended (Script uses `ubuntu:qualcomm` by default).
 
-## Workflow
+## Installation
 
-### 1. Export Model
-Download `facebook/dinov3-vitb16-pretrain-lvd1689m` and export to ONNX.
+1.  **Setup Host Environment**:
+    ```bash
+    # Create venv with specific versions for QNN tools (Numpy < 2.0)
+    python3.10 -m venv venv_qnn
+    source venv_qnn/bin/activate
+    pip install -r requirements.txt
+    ```
+
+2.  **Place Test Image (Optional)**:
+    Place a `test_image.jpg` in this directory to automatically verify inference.
+
+## Usage
+
+Use the master deployment script `3_deploy_and_run.py` to handle everything (conversion, upload, compilation, execution).
+
+Deploy and run using the Python script in `scripts/`.
+
+### 1. Native QNN Mode (Verified)
+Compiles C++ inference app on device and runs it.
 ```bash
-python export_dinov3.py
+python scripts/deploy.py --mode native
 ```
-*Output*: `dinov3.onnx`, `dinov3.onnx.data`
+-   **Features**:
+    -   Smart Reuse: Skips uploading large files (`.bin`, SDK libs) if they exist on device.
+    -   On-Device Compilation: Automatically compiles model and wrappers.
+    -   Verification: Runs `inference_dinov3` custom app to validate model loading.
+    -   Inputs: Automatically preprocesses `test/test_image.jpg`.
 
-### 2. Verify Export (Optional)
-Check if the exported ONNX model runs locally.
+### 2. ONNX Runtime Mode (Verified)
+Runs generic ONNX inference via Python.
 ```bash
-python verify_onnx.py
+python scripts/deploy.py --mode ort
 ```
 
-### 3. Deploy and Run on IQ-9075
-Automated script to transfer files to the device (`192.168.0.202`) and run inference.
-```bash
-python 3_deploy_and_run.py
-```
+## Directory Structure (Host)
+-   `scripts/`: Deployment (`deploy.py`) and utility (`preprocess_input.py`) scripts.
+-   `native_qnn/src`: C++ source (`dinov3_qnn.cpp`, `inference_dinov3.cpp`).
+-   `native_qnn/bin`: Large binary weights (`dinov3_qnn.bin`).
+-   `assets/`: ONNX models and JSON configs.
+-   `test/`: Test images.
 
-**What this does:**
-1. Connects via SSH (`ubuntu/qualcomm`).
-2. Uploads model and scripts.
-3. Sets up a Python virtual environment on the device (to avoid system conflicts).
-4. Installs `onnxruntime` and `numpy` on the device.
-5. Runs `inference_qnn_onnx.py`.
+## Directory Structure (Device)
+Deployed to `~/dinov3_deployment`.
+The script will automatically:
+1.  Preprocess it to `input.raw` (1x3x224x224, normalized).
+2.  Run inference on the device.
+3.  Save outputs to `output/` directory on the device.
 
----
-## Advanced: C++ QNN Native Workflow
-If you wish to use the native QNN C++ API (requires QNN SDK Host Tools installed locally):
-
-1. **Convert to QNN Library (Host)**:
-   ```bash
-   chmod +x 1_convert_on_host.sh
-   ./1_convert_on_host.sh
-   ```
-   *Requires `qnn-onnx-converter` in PATH.*
-
-2. **Deploy (Device)**:
-   The `3_deploy_and_run.py` script will automatically detect if you have generated `libs/` from step 1 and upload them. It will then attempt to compile and run the C++ application (`inference_dinov3.cpp`).
-
-## Manual Execution (On Device)
-If you are already SSH'd into the device (`192.168.0.202`) and typically see `~/onnx_convert`:
-
-1. **Go to directory**:
-   ```bash
-   cd ~/onnx_convert
-   ```
-
-2. **Activate Environment**:
-   ```bash
-   source venv/bin/activate
-   ```
-
-3. **Run Inference**:
-   ```bash
-   python inference_qnn_onnx.py --model dinov3.onnx --backend qnn_cpu --qnn_lib /usr/lib/libQnnCpu.so
-   ```
-
-**Verification:**
-If you see output shapes like `(1, 201, 768)`, it is working correctly!
+## Troubleshooting
+*   **Connection Timed Out**: Ensure the device IP (`192.168.0.202`) is reachable.
+*   **QNN_SDK_ROOT Error**: Ensure `export QNN_SDK_ROOT=/path/to/sdk` is set on the host.

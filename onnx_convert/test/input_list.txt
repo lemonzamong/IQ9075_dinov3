@@ -1,0 +1,1 @@
+pixel_values:=/home/ubuntu/onnx_convert/input.raw

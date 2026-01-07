@@ -1,0 +1,1 @@
+pixel_values:=/home/ubuntu/dinov3_deployment/test/input.raw

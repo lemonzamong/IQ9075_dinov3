@@ -8,8 +8,10 @@
 // if headers are missing. However, on device, headers SHOULD be present.
 // We assume we can include the headers.
 
-#include "QNN/QnnInterface.h"
-#include "QNN/QnnWrapperUtils.h"
+#include "QnnInterface.h"
+#include "QnnWrapperUtils.hpp"
+
+typedef Qnn_ErrorHandle_t (*QnnInterfaceGetProvidersFn_t)(const QnnInterface_t*** providerList, uint32_t* numProviders);
 
 // Helper to load symbol
 template <typename T>

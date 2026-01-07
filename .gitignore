@@ -10,7 +10,13 @@ __pycache__/
 # Ignore virtual environments recursively
 **/venv/
 **/.venv/
+**/venv_*/
 env/
+*venv*
+.venv*
 
 # Ignore large directories
 iq9_ubuntu_images/
+ubuntu_install/
+v2.41.0.251128/
+v2.41.0.251128.zip
