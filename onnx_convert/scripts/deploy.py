@@ -104,12 +104,21 @@ def main():
     # 1. Create remote directory structure
     run_command(ssh, f"mkdir -p {REMOTE_BASE_DIR}/bin")
     run_command(ssh, f"mkdir -p {REMOTE_BASE_DIR}/lib")
+    run_command(ssh, f"mkdir -p {REMOTE_BASE_DIR}/src")
+    run_command(ssh, f"mkdir -p {REMOTE_BASE_DIR}/obj")
     run_command(ssh, f"mkdir -p {REMOTE_BASE_DIR}/assets")
     run_command(ssh, f"mkdir -p {REMOTE_BASE_DIR}/test")
 
     # --- REORGANIZATION / REUSE LOGIC ---
     print("--- Checking for existing files to reuse ---")
-    # Check old dir
+    
+    # 0. Cleanup loose files in REMOTE_BASE_DIR (Move them to folders)
+    run_command(ssh, f"mv {REMOTE_BASE_DIR}/*.o {REMOTE_BASE_DIR}/obj/ 2>/dev/null")
+    run_command(ssh, f"mv {REMOTE_BASE_DIR}/*.cpp {REMOTE_BASE_DIR}/src/ 2>/dev/null")
+    run_command(ssh, f"mv {REMOTE_BASE_DIR}/*.bin {REMOTE_BASE_DIR}/bin/ 2>/dev/null")
+    run_command(ssh, f"mv {REMOTE_BASE_DIR}/weights_objs.txt {REMOTE_BASE_DIR}/obj/ 2>/dev/null")
+
+    # 1. Check old legacy dir for migration
     old_dir = "/home/ubuntu/onnx_convert"
     if run_command(ssh, f"[ -d {old_dir} ]", stream_output=False)[0] == 0:
         print(f"Found old directory {old_dir}. Moving reusable files...")
@@ -117,14 +126,13 @@ def main():
         # Move Libs
         run_command(ssh, f"[ -d {old_dir}/lib ] && cp -rn {old_dir}/lib/* {REMOTE_BASE_DIR}/lib/ 2>/dev/null")
         
-        # Move Object Files (The big win)
-        run_command(ssh, f"[ -d {old_dir}/obj ] && cp -rn {old_dir}/obj {REMOTE_BASE_DIR}/ 2>/dev/null")
-        run_command(ssh, f"[ -f {old_dir}/weights_objs.txt ] && cp -n {old_dir}/weights_objs.txt {REMOTE_BASE_DIR}/ 2>/dev/null")
+        # Move Object Files
+        run_command(ssh, f"[ -d {old_dir}/obj ] && cp -rn {old_dir}/obj/* {REMOTE_BASE_DIR}/obj/ 2>/dev/null")
+        run_command(ssh, f"[ -f {old_dir}/weights_objs.txt ] && cp -n {old_dir}/weights_objs.txt {REMOTE_BASE_DIR}/obj/ 2>/dev/null")
         
         # Move Source/Bin
-        run_command(ssh, f"[ -f {old_dir}/dinov3_qnn.cpp ] && cp -n {old_dir}/dinov3_qnn.cpp {REMOTE_BASE_DIR}/ 2>/dev/null")
-        # Don't move .bin if we have objects, but move if present just in case
-        run_command(ssh, f"[ -f {old_dir}/dinov3_qnn.bin ] && cp -n {old_dir}/dinov3_qnn.bin {REMOTE_BASE_DIR}/ 2>/dev/null")
+        run_command(ssh, f"[ -f {old_dir}/dinov3_qnn.cpp ] && cp -n {old_dir}/dinov3_qnn.cpp {REMOTE_BASE_DIR}/src/ 2>/dev/null")
+        run_command(ssh, f"[ -f {old_dir}/dinov3_qnn.bin ] && cp -n {old_dir}/dinov3_qnn.bin {REMOTE_BASE_DIR}/bin/ 2>/dev/null")
         
         # Move Assets
         run_command(ssh, f"[ -f {old_dir}/dinov3_qnn_net.json ] && cp -n {old_dir}/dinov3_qnn_net.json {REMOTE_BASE_DIR}/assets/ 2>/dev/null")
@@ -139,19 +147,14 @@ def main():
     # Find libQnnCpu.so - Check bundled first, then system
     _, lib_path, _ = run_command(ssh, f"find {REMOTE_BASE_DIR}/lib /opt/qcom /usr/lib /home/ubuntu -name 'libQnnCpu.so' 2>/dev/null | head -n 1", stream_output=False)
     if lib_path:
-        # Prefer the one we deploy if available
         if REMOTE_BASE_DIR in lib_path:
              print(f"Found Bundled Backend: {lib_path}")
              backend_lib_path = lib_path
         else:
              print(f"Found System Backend: {lib_path}")
              backend_lib_path = lib_path
-             if "lib/aarch64" in lib_path:
-                 sdk_root = lib_path.split("/lib/aarch64")[0]
-             elif "/usr/lib" in lib_path:
-                 sdk_root = "/usr"
     else:
-        print("Warning: libQnnCpu.so not found. Will attempt to upload.")
+        print("Warning: libQnnCpu.so not found.")
 
     # 3. Transfer Assets (Model, Configs)
     print("--- Syncing Assets ---")
@@ -165,118 +168,113 @@ def main():
     script_content += "echo '--- Starting Device Execution ---'\n"
 
     if args.mode == "ort":
-        # ... (ORT Logic can remain similar, adapted for new paths if needed)
-        pass # Not focusing on ORT right now
+        print("--- Syncing ORT Script ---")
+        transfer_file_smart(ssh, scp, DIR_ORT_SCRIPT, f"{REMOTE_BASE_DIR}/scripts/inference_ort.py")
+        
+        script_content += "echo '--- Running ORT Inference ---'\n"
+        script_content += "export LD_LIBRARY_PATH=~/dinov3_deployment/lib:$LD_LIBRARY_PATH\n"
+        script_content += "python3 ./scripts/inference_ort.py\n"
 
     elif args.mode == "native":
-        qnn_sdk_host = os.environ.get("QNN_SDK_ROOT", "")
-        if not qnn_sdk_host:
-             possible_paths = ["/home/hyeokjun/IQ-9075 Evaluation Kit (EVK)/v2.41.0.251128/qairt/2.41.0.251128"]
-             for p in possible_paths:
-                 if os.path.isdir(p):
-                     qnn_sdk_host = p
-                     break
+        qnn_sdk_host = os.environ.get("QNN_SDK_ROOT", "/home/hyeokjun/IQ-9075 Evaluation Kit (EVK)/v2.41.0.251128/qairt/2.41.0.251128")
         
         # Check if we already have processed weights
         has_processed_weights = False
-        _, out, _ = run_command(ssh, f"[ -f {REMOTE_BASE_DIR}/weights_objs.txt ] && echo 'yes' || echo 'no'", stream_output=False)
+        _, out, _ = run_command(ssh, f"[ -f {REMOTE_BASE_DIR}/obj/weights_objs.txt ] && echo 'yes' || echo 'no'", stream_output=False)
         if out == "yes":
-            print("Found pre-processed weights (weights_objs.txt). Skipping .bin upload and extraction.")
+            print("Found pre-processed weights. Skipping upload/extract.")
             has_processed_weights = True
         
-        # Upload Source (Small)
-        transfer_file_smart(ssh, scp, f"{DIR_NATIVE_SRC}/dinov3_qnn.cpp", f"{REMOTE_BASE_DIR}/dinov3_qnn.cpp")
-        transfer_file_smart(ssh, scp, f"{DIR_NATIVE_SRC}/inference_dinov3.cpp", f"{REMOTE_BASE_DIR}/inference_dinov3.cpp")
+        # Upload Source
+        transfer_file_smart(ssh, scp, f"{DIR_NATIVE_SRC}/dinov3_qnn.cpp", f"{REMOTE_BASE_DIR}/src/dinov3_qnn.cpp")
+        transfer_file_smart(ssh, scp, f"{DIR_NATIVE_SRC}/inference_dinov3.cpp", f"{REMOTE_BASE_DIR}/src/inference_dinov3.cpp")
         
-        # Upload Weights (.bin) ONLY if we don't have processed weights
         if not has_processed_weights:
-             transfer_file_smart(ssh, scp, f"{DIR_NATIVE_BIN}/dinov3_qnn.bin", f"{REMOTE_BASE_DIR}/dinov3_qnn.bin")
+             transfer_file_smart(ssh, scp, f"{DIR_NATIVE_BIN}/dinov3_qnn.bin", f"{REMOTE_BASE_DIR}/bin/dinov3_qnn.bin")
 
-        # Compile and Link (On-Device)
+        # Sync Headers/JNI
         print("--- Checking Dependencies ---")
-        
-        # Upload Headers (Tar optimized)
-        if qnn_sdk_host:
+        if os.path.isdir(qnn_sdk_host):
              subprocess.run(f"tar -czf sdk_headers.tar.gz -C \"{qnn_sdk_host}\" include", shell=True, check=True)
              if transfer_file_smart(ssh, scp, "sdk_headers.tar.gz", f"{REMOTE_BASE_DIR}/sdk_headers.tar.gz"):
                  run_command(ssh, f"tar -xzf {REMOTE_BASE_DIR}/sdk_headers.tar.gz -C {REMOTE_BASE_DIR} && rm {REMOTE_BASE_DIR}/sdk_headers.tar.gz")
              
-             # Upload JNI (Tar optimized)
              share_jni_path = f"{qnn_sdk_host}/share/QNN/converter/jni"
              subprocess.run(f"tar -czf sdk_jni.tar.gz -C \"{os.path.dirname(share_jni_path)}\" jni", shell=True, check=True)
              if transfer_file_smart(ssh, scp, "sdk_jni.tar.gz", f"{REMOTE_BASE_DIR}/sdk_jni.tar.gz"):
                  run_command(ssh, f"tar -xzf {REMOTE_BASE_DIR}/sdk_jni.tar.gz -C {REMOTE_BASE_DIR} && rm {REMOTE_BASE_DIR}/sdk_jni.tar.gz")
 
         # Build Script
-        script_content += "echo '--- Compiling ---'\n"
-        
-        # Skip extraction if we have weights
-        if has_processed_weights:
-             script_content += "echo 'Using existing processed weights...'\n"
-        else:
+        script_content += "echo '--- Compiling Native QNN ---'\n"
+        if not has_processed_weights:
              script_content += "mkdir -p obj/binary\n"
-             script_content += "tar -xf dinov3_qnn.bin -C obj/binary\n"
+             script_content += "echo 'Extracting weights...'\n"
+             script_content += "tar -xf bin/dinov3_qnn.bin -C obj/binary\n"
+             script_content += "echo 'Converting weights to object files...'\n"
              script_content += "find obj/binary -name '*.raw' | while read f; do ld -r -b binary -o \"$f.o\" \"$f\"; done\n"
-             script_content += "find obj/binary -name '*.raw.o' > weights_objs.txt\n"
+             script_content += "find obj/binary -name '*.raw.o' > obj/weights_objs.txt\n"
         
-        script_content += "g++ -c -fPIC jni/QnnModel.cpp -I./include -I./include/QNN -I./jni\n"
-        script_content += "g++ -c -fPIC jni/QnnWrapperUtils.cpp -I./include -I./include/QNN -I./jni\n"
-        script_content += "g++ -c -fPIC jni/linux/QnnModelPal.cpp -I./include -I./include/QNN -I./jni\n"
-        script_content += "g++ -c -fPIC dinov3_qnn.cpp -I./include -I./include/QNN -I./jni\n"
+        script_content += "echo 'Compiling SDK wrappers...'\n"
+        script_content += "g++ -c -fPIC jni/QnnModel.cpp -o obj/QnnModel.o -I./include -I./include/QNN -I./jni\n"
+        script_content += "g++ -c -fPIC jni/QnnWrapperUtils.cpp -o obj/QnnWrapperUtils.o -I./include -I./include/QNN -I./jni\n"
+        script_content += "g++ -c -fPIC jni/linux/QnnModelPal.cpp -o obj/QnnModelPal.o -I./include -I./include/QNN -I./jni\n"
+        script_content += "g++ -c -fPIC src/dinov3_qnn.cpp -o obj/dinov3_qnn.o -I./include -I./include/QNN -I./jni\n"
         
-        script_content += "g++ -shared -fPIC -o bin/libdinov3.so dinov3_qnn.o QnnModel.o QnnWrapperUtils.o QnnModelPal.o @weights_objs.txt -I./include -I./include/QNN -I./jni\n"
+        script_content += "echo 'Linking model library...'\n"
+        script_content += "g++ -shared -fPIC -o bin/libdinov3.so obj/dinov3_qnn.o obj/QnnModel.o obj/QnnWrapperUtils.o obj/QnnModelPal.o @obj/weights_objs.txt -I./include -I./include/QNN -I./jni\n"
         
-        script_content += "g++ -o bin/inference_dinov3 inference_dinov3.cpp -ldl -I./include -I./include/QNN -I./jni\n"
+        script_content += "echo 'Compiling inference app...'\n"
+        script_content += "rm -f bin/inference_dinov3\n"
+        script_content += "g++ -o bin/inference_dinov3 src/inference_dinov3.cpp obj/QnnModel.o obj/QnnWrapperUtils.o obj/QnnModelPal.o -ldl -I./include -I./include/QNN -I./jni\n"
+        
+        # Test Run
+        script_content += "echo '--- Running Verification App ---'\n"
         script_content += f"export LD_LIBRARY_PATH={REMOTE_BASE_DIR}/lib:$LD_LIBRARY_PATH\n"
-        script_content += f"./bin/inference_dinov3 {REMOTE_BASE_DIR}/bin/libdinov3.so {REMOTE_BASE_DIR}/lib/libQnnCpu.so\n"
+        # Force System Backend for platform compatibility
+        script_content += f"./bin/inference_dinov3 ./bin/libdinov3.so /usr/lib/libQnnCpu.so ./test/input.raw\n"
         
-        # Upload Libs (Smart Tar)
+        # Sync SDK Libs
         print("--- Syncing SDK Libraries ---")
-        # Check if libs exist remotely
         _, out, _ = run_command(ssh, f"[ -f {REMOTE_BASE_DIR}/lib/libQnnCpu.so ] && echo 'yes' || echo 'no'", stream_output=False)
         if out == "yes":
-             print(f"SDK libraries found in {REMOTE_BASE_DIR}/lib. Skipping upload.")
+             print("SDK libraries found. Skipping.")
         else:
             subprocess.run(f"tar -czf sdk_libs.tar.gz -C \"{qnn_sdk_host}/lib/aarch64-ubuntu-gcc9.4\" .", shell=True, check=True)
             if transfer_file_smart(ssh, scp, "sdk_libs.tar.gz", f"{REMOTE_BASE_DIR}/sdk_libs.tar.gz"):
-                print("Extracting libs on device...")
                 run_command(ssh, f"mkdir -p {REMOTE_BASE_DIR}/lib && tar -xzf {REMOTE_BASE_DIR}/sdk_libs.tar.gz -C {REMOTE_BASE_DIR}/lib && rm {REMOTE_BASE_DIR}/sdk_libs.tar.gz")
         
-        # Upload qnn-net-run
-        qnn_net_run_src = f"{qnn_sdk_host}/bin/aarch64-ubuntu-gcc9.4/qnn-net-run"
-        transfer_file_smart(ssh, scp, qnn_net_run_src, f"{REMOTE_BASE_DIR}/bin/qnn-net-run")
+        # qnn-net-run
+        transfer_file_smart(ssh, scp, f"{qnn_sdk_host}/bin/aarch64-ubuntu-gcc9.4/qnn-net-run", f"{REMOTE_BASE_DIR}/bin/qnn-net-run")
         run_command(ssh, f"chmod +x {REMOTE_BASE_DIR}/bin/qnn-net-run")
 
-        # Verify
+        # Prep Test
         if os.path.exists(f"{DIR_TEST}/test_image.jpg"):
              print("--- Preprocessing Test Image ---")
              subprocess.run([sys.executable, f"{DIR_SCRIPTS}/preprocess_input.py", f"{DIR_TEST}/test_image.jpg", f"{DIR_TEST}/input.raw"], check=True)
              transfer_file_smart(ssh, scp, f"{DIR_TEST}/input.raw", f"{REMOTE_BASE_DIR}/test/input.raw")
-             transfer_file_smart(ssh, scp, f"{DIR_TEST}/input_list.txt", f"{REMOTE_BASE_DIR}/test/input_list.txt") # Assuming preprocess generated this? check preprocess script
-             # Actually preprocess generates raw, lets make list file
              with open("input_list.txt", "w") as f:
                  f.write(f"pixel_values:={REMOTE_BASE_DIR}/test/input.raw\n")
              transfer_file_smart(ssh, scp, "input_list.txt", f"{REMOTE_BASE_DIR}/test/input_list.txt")
 
-             script_content += "echo '--- Verifying with qnn-net-run ---'\n"
-             script_content += f"export LD_LIBRARY_PATH={REMOTE_BASE_DIR}/lib:$LD_LIBRARY_PATH\n"
-             script_content += f"./bin/qnn-net-run --backend {REMOTE_BASE_DIR}/lib/libQnnCpu.so --model {REMOTE_BASE_DIR}/bin/libdinov3.so --input_list {REMOTE_BASE_DIR}/test/input_list.txt --output_dir {REMOTE_BASE_DIR}/test/output\n"
-
-    # Execute
+    # Final Execute
     with open("run_on_device.sh", "w") as f:
         f.write(script_content)
-    
     transfer_file_smart(ssh, scp, "run_on_device.sh", f"{REMOTE_BASE_DIR}/run_on_device.sh")
     run_command(ssh, f"chmod +x {REMOTE_BASE_DIR}/run_on_device.sh")
     
     print("--- Executing Remote Script ---")
-    channel = ssh.get_transport().open_session()
-    channel.exec_command(f"{REMOTE_BASE_DIR}/run_on_device.sh")
+    stdin, stdout, stderr = ssh.exec_command(f"{REMOTE_BASE_DIR}/run_on_device.sh")
     
+    # Read output line by line as it comes
     while True:
-        if channel.exit_status_ready(): break
-        if channel.recv_ready(): sys.stdout.write(channel.recv(1024).decode())
-        if channel.recv_stderr_ready(): sys.stderr.write(channel.recv_stderr(1024).decode())
+        line = stdout.readline()
+        if not line: break
+        sys.stdout.write(line)
+        sys.stdout.flush()
+    
+    err = stderr.read().decode().strip()
+    if err:
+        sys.stderr.write(f"\n[STDERR]\n{err}\n")
     
     print("\nDone.")
     cleanup_temp_files()
