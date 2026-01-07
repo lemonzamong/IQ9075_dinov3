@@ -1,6 +1,6 @@
 ---
-timestamp: 103701995457
-command: ./bin/qnn-net-run --backend /home/ubuntu/dinov3_deployment/lib/libQnnHtp.so --model /home/ubuntu/dinov3_deployment/bin/libdinov3.so --input_list /home/ubuntu/dinov3_deployment/test/custom_input_list.txt --output_dir /home/ubuntu/dinov3_deployment/test/custom_output
+timestamp: 105248431608
+command: ./bin/qnn-net-run --backend /home/ubuntu/dinov3_deployment/lib/libQnnHtp.so --model /home/ubuntu/dinov3_deployment/bin/libdinov3.so --input_list /home/ubuntu/dinov3_deployment/test/custom_input_list.txt --output_dir /home/ubuntu/dinov3_deployment/test/custom_output --profiling_level basic --log_level info
 execution_mode: synchronous
 inferences_completed: 1
 graphs:

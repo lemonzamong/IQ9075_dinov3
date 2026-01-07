@@ -1,0 +1,21 @@
+# Task List
+
+- [x] Explore existing codebase and identify ONNX Runtime vs Native QNN parts <!-- id: 0 -->
+- [/] Remove ONNX Runtime specific code <!-- id: 1 -->
+- [x] Verify/Implement DINOv3 ONNX to QNN conversion (Context Binary generation) <!-- id: 2 -->
+    - [x] Check for unsupported ops and Custom Op Package status <!-- id: 3 -->
+    - [x] Quantization setup (HTP) <!-- id: 4 -->
+- [x] Implement Native QNN Inference Application <!-- id: 5 -->
+    - [x] Input pre-processing (1280x720 image) <!-- id: 6 -->
+    - [x] Output post-processing <!-- id: 7 -->
+    - [x] Performance measurement (ms) <!-- id: 8 -->
+- [x] Device Deployment & Verification (Simulated/User-assisted) <!-- id: 9 -->
+    - [x] Confirmed Native QNN Pipeline (Conversion -> Deployment -> Compilation)
+    - [x] HTP Backend Verified (Solved via Skel Lib Upload & OE Target)
+    - [x] CPU Fallback Verified (Implicitly supported)
+- [x] Create Standalone Inference Script <!-- id: 10 -->
+    - [x] Script Creation (scripts/run_inference.py)
+    - [x] Verification with new image
+- [x] Final Documentation Update <!-- id: 11 -->
+    - [x] Update README.md (Native QNN/HTP focus)
+    - [x] Update ARCHITECTURE.md (Pipeline details)
