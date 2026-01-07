@@ -41,6 +41,12 @@ This project deploys the **DINOv3** model on the **Qualcomm IQ-9075 Evaluation K
 
 ## Workflow
 
+### 0. Download Model (Host)
+Downloads the ONNX model from Huggingface.
+```bash
+python3 scripts/download_model.py
+```
+
 ### 1. Convert Model (Host)
 Converts the ONNX model to QNN C++ source code and quantized binary weights.
 ```bash
