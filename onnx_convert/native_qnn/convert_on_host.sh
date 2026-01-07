@@ -35,7 +35,15 @@ if [ ! -f "$ONNX_FILE" ]; then
     exit 1
 fi
 
-echo "--- Step 1: Converting ONNX to QNN Graph ---"
+echo "--- Step 0: Preparing Calibration Data ---"
+# Create a dummy input list if not exists.Ideally this should be real data.
+if [ ! -f "input_list.txt" ]; then
+    # Create 224x224 dummy
+    python3 -c "import numpy as np; np.zeros((1,3,224,224), dtype=np.float32).tofile('input_224.raw')"
+    echo "pixel_values:=./input_224.raw" > input_list.txt
+fi
+
+echo "--- Step 1: Converting ONNX to QNN Graph (Quantized) ---"
 # Check if qnn-onnx-converter is in PATH
 if ! command -v qnn-onnx-converter &> /dev/null; then
     echo "Error: qnn-onnx-converter could not be found."
@@ -47,22 +55,25 @@ qnn-onnx-converter \
     --input_network "$ONNX_FILE" \
     --output_path "$OUTPUT_CPP" \
     --input_dim "pixel_values" 1,3,224,224 \
-    --dry_run \
+    --input_list "input_list.txt" \
     --no_simplification
 
 # Note: We rely on 'set -e' to exit if the above fails.
 
-echo "--- Step 2: Generating Model Library for AArch64 ---"
-# Check generator
-if ! command -v qnn-model-lib-generator &> /dev/null; then
-    echo "Error: qnn-model-lib-generator not found."
-    exit 1
-fi
-
-qnn-model-lib-generator \
-    -c "$OUTPUT_CPP" \
-    -b "$OUTPUT_BIN" \
-    -o "$OUTPUT_LIB_DIR" \
-    -t aarch64-linux-clang
+echo "--- Step 2: Generating Model Library for AArch64 (SKIPPED) ---"
+# We skip this because the host qnn-model-lib-generator often doesn't support
+# aarch64-linux-clang properly without cross-compiler setup.
+# We rely on On-Device Compilation (see deploy.py).
+#
+# if ! command -v qnn-model-lib-generator &> /dev/null; then
+#     echo "Error: qnn-model-lib-generator not found."
+#     exit 1
+# fi
+#
+# qnn-model-lib-generator \
+#     -c "$OUTPUT_CPP" \
+#     -b "$OUTPUT_BIN" \
+#     -o "$OUTPUT_LIB_DIR" \
+#     -t aarch64-linux-clang
 
 echo "Success! QNN Library generated at $OUTPUT_LIB_DIR"

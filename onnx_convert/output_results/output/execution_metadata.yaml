@@ -1,0 +1,21 @@
+---
+timestamp: 103568660070
+command: ./bin/qnn-net-run --backend /home/ubuntu/dinov3_deployment/lib/libQnnHtp.so --model /home/ubuntu/dinov3_deployment/bin/libdinov3.so --input_list /home/ubuntu/dinov3_deployment/test/input_list.txt --output_dir /home/ubuntu/dinov3_deployment/test/output
+execution_mode: synchronous
+inferences_completed: 1
+graphs:
+  - graph_name: dinov3_qnn
+    input_tensors:
+    - tensor_name: pixel_values
+      id: 1
+      datatype: QNN_DATATYPE_FLOAT_32
+      dimensions: [1,224,224,3]
+    output_tensors:
+    - tensor_name: last_hidden_state
+      id: 1043
+      datatype: QNN_DATATYPE_FLOAT_32
+      dimensions: [1,201,768]
+    - tensor_name: pooler_output
+      id: 1046
+      datatype: QNN_DATATYPE_FLOAT_32
+      dimensions: [1,768]
