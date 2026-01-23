@@ -2,20 +2,32 @@ import torch
 from transformers import AutoImageProcessor, AutoModel
 import os
 from huggingface_hub import login
+import argparse
 
-# User provided token
-HF_TOKEN = os.environ.get("HF_TOKEN", "")
+def get_args():
+    parser = argparse.ArgumentParser(description="Export DINOv3 model to ONNX")
+    parser.add_argument("--model_id", type=str, default="facebook/dinov3-vitb16-pretrain-lvd1689m", help="Hugging Face model ID")
+    parser.add_argument("--auth_token", type=str, default=None, help="Hugging Face authentication token")
+    return parser.parse_args()
 
 def export_model():
-    print(f"Logging in to Hugging Face...")
-    login(token=HF_TOKEN)
+    args = get_args()
+    
+    # User provided token
+    token = args.auth_token if args.auth_token else os.environ.get("HF_TOKEN", "")
+    
+    if token:
+        print(f"Logging in to Hugging Face...")
+        login(token=token)
+    else:
+        print("No token provided, attempting to use cached credentials.")
 
-    model_name = "facebook/dinov3-vitb16-pretrain-lvd1689m"
+    model_name = args.model_id
     print(f"Loading model: {model_name}")
     
     try:
         processor = AutoImageProcessor.from_pretrained(model_name)
-        model = AutoModel.from_pretrained(model_name, device_map="cpu", trust_remote_code=True)
+        model = AutoModel.from_pretrained(model_name, device_map="cpu", trust_remote_code=True, low_cpu_mem_usage=True)
         model.eval()
     except Exception as e:
         print(f"Error loading model: {e}")

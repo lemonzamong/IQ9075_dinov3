@@ -22,8 +22,9 @@ else
 fi
 
 # Define paths
+MODEL_VARIANT="${1:-dinov3-vitb16}"
 MODEL_NAME="dinov3"
-ONNX_FILE="../common/${MODEL_NAME}.onnx"
+ONNX_FILE="../../onnx_download/${MODEL_VARIANT}/${MODEL_NAME}.onnx"
 OUTPUT_CPP="${MODEL_NAME}_qnn.cpp"
 OUTPUT_BIN="${MODEL_NAME}_qnn.bin"
 OUTPUT_LIB_DIR="./libs"
@@ -31,9 +32,11 @@ OUTPUT_LIB_DIR="./libs"
 # Check ONNX file
 if [ ! -f "$ONNX_FILE" ]; then
     echo "Error: $ONNX_FILE not found."
-    echo "Please run 'python3 ../common/export_dinov3.py' first."
+    echo "Please check available models in ../../onnx_download/"
     exit 1
 fi
+
+echo "Using Model Variant: $MODEL_VARIANT"
 
 echo "--- Step 0: Preparing Calibration Data ---"
 # Create a dummy input list if not exists.Ideally this should be real data.
@@ -77,3 +80,8 @@ echo "--- Step 2: Generating Model Library for AArch64 (SKIPPED) ---"
 #     -t aarch64-linux-clang
 
 echo "Success! QNN Library generated at $OUTPUT_LIB_DIR"
+
+echo "--- Step 3: Organizing Artifacts ---"
+mkdir -p src bin
+[ -f "$OUTPUT_CPP" ] && mv "$OUTPUT_CPP" src/ && echo "Moved $OUTPUT_CPP to src/"
+[ -f "$OUTPUT_BIN" ] && mv "$OUTPUT_BIN" bin/ && echo "Moved $OUTPUT_BIN to bin/"
