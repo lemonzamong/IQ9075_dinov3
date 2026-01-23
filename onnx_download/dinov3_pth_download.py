@@ -34,7 +34,7 @@ def download_dinov3_pth(model_id, token=None, output_dir=None, allow_patterns=No
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Download DINOv3 PyTorch Model")
     parser.add_argument("--model_id", type=str, default="facebook/dinov3-vit7b16-pretrain-lvd1689m", help="Target Model ID")
-    parser.add_argument("--token", type=str, default="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", help="Hugging Face Auth Token")
+    parser.add_argument("--token", type=str, default="", help="Hugging Face Auth Token")
     parser.add_argument("--output_dir", type=str, default="dinov3_vit7b_pth", help="Directory to save the model")
     parser.add_argument("--allow_patterns", nargs='+', help="Patterns of files to download (e.g., *.safetensors)")
     parser.add_argument("--force_download", action="store_true", help="Force download even if exists")

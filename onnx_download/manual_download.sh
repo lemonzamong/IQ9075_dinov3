@@ -1,6 +1,6 @@
 #!/bin/bash
 MODEL_ID="facebook/dinov3-vit7b16-pretrain-lvd1689m"
-TOKEN="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"
+TOKEN=""
 OUTPUT_DIR="dinov3_vit7b_pth"
 
 mkdir -p $OUTPUT_DIR
